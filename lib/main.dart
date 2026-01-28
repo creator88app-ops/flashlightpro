@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:torch_light/torch_light.dart';
+import 'package:camera/camera.dart';
 import 'package:battery_plus/battery_plus.dart';
 
-void main() {
+late List<CameraDescription> cameras;
+CameraController? controller;
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  cameras = await availableCameras();
   runApp(const FlashLightApp());
 }
 
@@ -11,116 +16,110 @@ class FlashLightApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return const MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'FlashLight Pro',
-      theme: ThemeData.dark(),
-      home: const FlashLightPage(),
+      home: FlashHome(),
     );
   }
 }
 
-class FlashLightPage extends StatefulWidget {
-  const FlashLightPage({super.key});
+class FlashHome extends StatefulWidget {
+  const FlashHome({super.key});
 
   @override
-  State<FlashLightPage> createState() => _FlashLightPageState();
+  State<FlashHome> createState() => _FlashHomeState();
 }
 
-class _FlashLightPageState extends State<FlashLightPage> {
+class _FlashHomeState extends State<FlashHome> {
   bool isOn = false;
-  int batteryLevel = 0;
+  double intensity = 1.0;
+  int battery = 0;
 
   @override
   void initState() {
     super.initState();
-    _getBattery();
+    initCamera();
+    getBattery();
   }
 
-  Future<void> _getBattery() async {
-    final battery = Battery();
-    final level = await battery.batteryLevel;
-    setState(() {
-      batteryLevel = level;
-    });
+  Future<void> initCamera() async {
+    controller = CameraController(
+      cameras.first,
+      ResolutionPreset.low,
+      enableAudio: false,
+    );
+    await controller!.initialize();
+  }
+
+  Future<void> getBattery() async {
+    battery = await Battery().batteryLevel;
+    setState(() {});
   }
 
   Future<void> toggleFlash() async {
-    try {
-      if (isOn) {
-        await TorchLight.disableTorch();
-      } else {
-        await TorchLight.enableTorch();
-      }
-      setState(() {
-        isOn = !isOn;
-      });
-    } catch (e) {
-      debugPrint(e.toString());
+    if (isOn) {
+      await controller!.setFlashMode(FlashMode.off);
+    } else {
+      await controller!.setFlashMode(FlashMode.torch);
+      await controller!.setExposureOffset(intensity);
     }
+    setState(() {
+      isOn = !isOn;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            colors: isOn
-                ? [Colors.yellow.shade700, Colors.black]
-                : [Colors.grey.shade900, Colors.black],
-            radius: 0.8,
+      backgroundColor: Colors.black,
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            "FlashLight Pro",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 32,
+              fontStyle: FontStyle.italic,
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'FlashLight Pro',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: isOn ? Colors.yellow : Colors.white,
+          const SizedBox(height: 60),
+          GestureDetector(
+            onTap: toggleFlash,
+            child: CircleAvatar(
+              radius: 90,
+              backgroundColor: Colors.grey[850],
+              child: Icon(
+                Icons.power_settings_new,
+                size: 80,
+                color: isOn ? Colors.green : Colors.white,
               ),
             ),
-            const SizedBox(height: 40),
-            GestureDetector(
-              onTap: toggleFlash,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: 180,
-                height: 180,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isOn ? Colors.yellow : Colors.grey.shade800,
-                  boxShadow: [
-                    BoxShadow(
-                      color: isOn ? Colors.yellowAccent : Colors.black54,
-                      blurRadius: 30,
-                      spreadRadius: 5,
-                    )
-                  ],
-                ),
-                child: Icon(
-                  Icons.power_settings_new,
-                  size: 80,
-                  color: isOn ? Colors.black : Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(height: 40),
-            Text(
-              'Battery: $batteryLevel%',
-              style: const TextStyle(fontSize: 18),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Tap the button to toggle flashlight',
-              style: TextStyle(color: Colors.white70),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 40),
+          Text(
+            "Battery: $battery%",
+            style: const TextStyle(color: Colors.white70, fontSize: 18),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            "Light Intensity",
+            style: TextStyle(color: Colors.white70),
+          ),
+          Slider(
+            value: intensity,
+            min: 0,
+            max: 5,
+            onChanged: (value) async {
+              setState(() {
+                intensity = value;
+              });
+              if (isOn) {
+                await controller!.setExposureOffset(value);
+              }
+            },
+          ),
+        ],
       ),
     );
   }
